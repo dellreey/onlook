@@ -12,6 +12,15 @@ import type { CodeFileSystem } from '@onlook/file-system';
 export interface SyncConfig {
     include?: string[];
     exclude?: string[];
+    /**
+     * O observador de arquivos do provider.
+     *
+     * Quem observa o projeto é o processo que o roda, e o sandbox de execução é o único modo que
+     * tem esse processo. Onde ele não existe, ligar o observador falharia em toda abertura de
+     * projeto sem devolver nenhuma capacidade: a leitura inicial dos arquivos continua acontecendo
+     * pelo `pullFromSandbox`, e só a observação é desligada.
+     */
+    watch?: boolean;
 }
 
 const DEFAULT_EXCLUDES = ['node_modules', '.git', '.next', 'dist', 'build', '.turbo'];
@@ -38,6 +47,7 @@ export class CodeProviderSync {
     private isPaused = false;
     private readonly excludes: string[];
     private readonly excludePatterns: string[];
+    private readonly watchEnabled: boolean;
     private fileHashes = new Map<string, string>();
     private instanceKey: string | null = null;
 
@@ -49,6 +59,7 @@ export class CodeProviderSync {
         // Compute excludes once
         this.excludes = [...DEFAULT_EXCLUDES, ...(this.config.exclude ?? [])];
         this.excludePatterns = this.excludes.map((dir) => `${dir}/**`);
+        this.watchEnabled = this.config.watch !== false;
     }
 
     /**
@@ -358,6 +369,11 @@ export class CodeProviderSync {
     }
 
     private async setupWatching(): Promise<void> {
+        if (!this.watchEnabled) {
+            console.debug('[Sync] File watching is disabled for this provider; skipping.');
+            return;
+        }
+
         try {
             // Watch the current directory (relative to workspace)
             const watchResult = await this.provider.watchFiles({

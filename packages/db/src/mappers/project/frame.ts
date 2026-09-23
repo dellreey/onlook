@@ -10,6 +10,8 @@ export const fromDbFrame = (dbFrame: DbFrame): Frame => {
         canvasId: dbFrame.canvasId,
         branchId: dbFrame.branchId,
         url: dbFrame.url,
+        drivenPageId: dbFrame.drivenPageId,
+        drivenVariantId: dbFrame.drivenVariantId,
         position: {
             x: Number(dbFrame.x),
             y: Number(dbFrame.y),
@@ -27,6 +29,8 @@ export const toDbFrame = (frame: Frame): DbFrame => {
         branchId: frame.branchId,
         canvasId: frame.canvasId,
         url: frame.url,
+        drivenPageId: frame.drivenPageId ?? null,
+        drivenVariantId: frame.drivenVariantId ?? null,
         x: frame.position.x.toString(),
         y: frame.position.y.toString(),
         width: frame.dimension.width.toString(),
@@ -41,6 +45,8 @@ export const toDbPartialFrame = (frame: Partial<Frame>): Partial<DbFrame> => {
     return {
         id: frame.id,
         url: frame.url,
+        drivenPageId: frame.drivenPageId,
+        drivenVariantId: frame.drivenVariantId,
         x: frame.position?.x.toString(),
         y: frame.position?.y.toString(),
         canvasId: frame.canvasId,

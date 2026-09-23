@@ -8,7 +8,11 @@ export const env = createEnv({
      */
     server: {
         NODE_ENV: z.enum(['development', 'test', 'production']),
-        CSB_API_KEY: z.string(),
+        // Local runtime does not contact CodeSandbox. Remote mode validates the
+        // credential at the provider boundary when it is actually selected.
+        CSB_API_KEY: z.string().optional(),
+        ONLOOK_SANDBOX_MODE: z.enum(['local', 'codesandbox']).optional(),
+        ONLOOK_LOCAL_PROJECTS_ROOT: z.string().optional(),
         SUPABASE_DATABASE_URL: z.url(),
         SUPABASE_SERVICE_ROLE_KEY: z.string(),
         RESEND_API_KEY: z.string().optional(),
@@ -85,6 +89,8 @@ export const env = createEnv({
     runtimeEnv: {
         NODE_ENV: process.env.NODE_ENV,
         CSB_API_KEY: process.env.CSB_API_KEY,
+        ONLOOK_SANDBOX_MODE: process.env.ONLOOK_SANDBOX_MODE,
+        ONLOOK_LOCAL_PROJECTS_ROOT: process.env.ONLOOK_LOCAL_PROJECTS_ROOT,
         RESEND_API_KEY: process.env.RESEND_API_KEY,
         NEXT_PUBLIC_FEATURE_COLLABORATION: process.env.NEXT_PUBLIC_FEATURE_COLLABORATION,
 

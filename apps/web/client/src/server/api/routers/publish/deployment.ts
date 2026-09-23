@@ -8,6 +8,7 @@ import { and, desc, eq, or } from 'drizzle-orm';
 import { z } from "zod";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import { verifyDeploymentAccess, verifyProjectAccess } from '../project/helper';
+import { rejectIfLocalMode } from '../../../sandbox/local-runtime';
 import { updateDeployment } from './helpers';
 import { createDeployment, publish } from './helpers/index.ts';
 
@@ -42,6 +43,7 @@ export const deploymentRouter = createTRPCRouter({
         buildFlags: z.string().optional(),
         envVars: z.record(z.string(), z.string()).optional(),
     })).mutation(async ({ ctx, input }) => {
+        rejectIfLocalMode();
         const {
             projectId,
             type,
@@ -88,6 +90,7 @@ export const deploymentRouter = createTRPCRouter({
     run: protectedProcedure.input(z.object({
         deploymentId: z.string(),
     })).mutation(async ({ ctx, input }): Promise<void> => {
+        rejectIfLocalMode();
         const { deploymentId } = input;
         await verifyDeploymentAccess(ctx.db, ctx.user.id, deploymentId);
         const existingDeployment = await ctx.db.query.deployments.findFirst({

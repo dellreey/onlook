@@ -240,10 +240,23 @@ export class CodeFileSystem extends FileSystem {
     }
 
     private async undobounceSaveIndexToFile(): Promise<void> {
+        // O índice em disco é um cache que se reconstrói a partir dos arquivos. Sem sistema de
+        // arquivos aberto não existe onde gravar — e é o caso quando o editor é desmontado antes de
+        // `initialize()` terminar. A gravação é pulada e dita em uma linha: silêncio aqui faria a
+        // falha aparecer do outro lado, como rejeição sem dono em um caminho que ninguém espera.
+        if (!this.initialized) {
+            console.warn(
+                `[CodeEditorApi] Skipped saving the index to ${this.indexPath}: the file system has not been initialized.`,
+            );
+            return;
+        }
+
         try {
             await this.createDirectory(ONLOOK_CACHE_DIRECTORY);
-        } catch {
-            console.warn(`[CodeEditorApi] Failed to create ${ONLOOK_CACHE_DIRECTORY} directory`);
+        } catch (error) {
+            console.warn(
+                `[CodeEditorApi] Failed to create ${ONLOOK_CACHE_DIRECTORY} directory: ${error instanceof Error ? error.message : error}`,
+            );
         }
         const index = getIndexFromCache(this.getCacheKey());
         if (index) {

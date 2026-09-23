@@ -24,35 +24,94 @@ export type IFrameView = HTMLIFrameElement & {
     isLoading: () => boolean;
 } & PromisifiedPendpalChildMethods;
 
-// Creates a proxy that provides safe fallback methods for any property access
-const createSafeFallbackMethods = (): PromisifiedPendpalChildMethods => {
-    return new Proxy({} as PromisifiedPendpalChildMethods, {
-        get(_target, prop: string | symbol) {
-            if (typeof prop === 'symbol') return undefined;
+/**
+ * Os métodos do protocolo com o frame, nomeados uma vez.
+ *
+ * A lista é a mesma para o caminho conectado e para o caminho sem conexão, e é isso que mantém os
+ * dois em sincronia: antes, o caminho sem conexão era um `Proxy` que respondia a qualquer nome, e o
+ * caminho conectado era um objeto com estes nomes escritos à mão.
+ */
+const PENPAL_CHILD_METHOD_NAMES = [
+    'processDom',
+    'getElementAtLoc',
+    'getElementByDomId',
+    'setFrameId',
+    'setBranchId',
+    'getElementIndex',
+    'getComputedStyleByDomId',
+    'updateElementInstance',
+    'getFirstOnlookElement',
+    'setElementType',
+    'getElementType',
+    'getParentElement',
+    'getChildrenCount',
+    'getOffsetParent',
+    'getActionLocation',
+    'getActionElement',
+    'getInsertLocation',
+    'getRemoveAction',
+    'getTheme',
+    'setTheme',
+    'startDrag',
+    'drag',
+    'dragAbsolute',
+    'endDragAbsolute',
+    'endDrag',
+    'endAllDrag',
+    'startEditingText',
+    'editText',
+    'stopEditingText',
+    'updateStyle',
+    'insertElement',
+    'removeElement',
+    'moveElement',
+    'groupElements',
+    'ungroupElements',
+    'insertImage',
+    'removeImage',
+    'isChildTextEditable',
+    'handleBodyReady',
+    'captureScreenshot',
+    'buildLayerTree',
+] as const;
 
-            return async (..._args: any[]) => {
-                const method = String(prop);
-                if (
-                    method.startsWith('get') ||
-                    method.includes('capture') ||
-                    method.includes('build')
-                ) {
-                    return null;
-                }
-                if (method.includes('Count')) {
-                    return 0;
-                }
-                if (method.includes('Editable') || method.includes('supports')) {
-                    return false;
-                }
-                return undefined;
-            };
-        },
-    });
+type PenpalChildMethodName = (typeof PENPAL_CHILD_METHOD_NAMES)[number];
+
+/** O que uma leitura devolve quando não há frame para perguntar. */
+function safeFallbackResult(method: PenpalChildMethodName) {
+    if (method.startsWith('get') || method.includes('capture') || method.includes('build')) {
+        return null;
+    }
+    if (method.includes('Count')) {
+        return 0;
+    }
+    if (method.includes('Editable') || method.includes('supports')) {
+        return false;
+    }
+    return undefined;
+}
+
+/**
+ * Os mesmos métodos, todos devolvendo o valor seguro de cada um.
+ *
+ * Isto é um objeto de verdade, e não um `Proxy`: quem consome escreve os métodos no elemento do
+ * frame com `Object.assign`, que copia apenas propriedades próprias e enumeráveis. Um `Proxy` sem os
+ * tratos `ownKeys` e `getOwnPropertyDescriptor` não tem nenhuma, então a cópia saía vazia e o editor
+ * quebrava em `frameData.view.getTheme is not a function` — o que acontece de forma sistemática num
+ * frame que não abre o protocolo, como o preview do Driven.
+ */
+const createSafeFallbackMethods = (): PromisifiedPendpalChildMethods => {
+    return Object.fromEntries(
+        PENPAL_CHILD_METHOD_NAMES.map((method) => [
+            method,
+            async (..._args: any[]) => safeFallbackResult(method),
+        ]),
+    ) as unknown as PromisifiedPendpalChildMethods;
 };
 
 interface FrameViewProps extends IframeHTMLAttributes<HTMLIFrameElement> {
     frame: Frame;
+    connectToPenpal?: boolean;
     reloadIframe: () => void;
     onConnectionFailed: () => void;
     onConnectionSuccess: () => void;
@@ -65,6 +124,7 @@ export const FrameComponent = observer(
         (
             {
                 frame,
+                connectToPenpal = true,
                 reloadIframe,
                 onConnectionFailed,
                 onConnectionSuccess,
@@ -204,49 +264,13 @@ export const FrameComponent = observer(
                     return createSafeFallbackMethods();
                 }
 
-                return {
-                    processDom: promisifyMethod(penpalChild?.processDom),
-                    getElementAtLoc: promisifyMethod(penpalChild?.getElementAtLoc),
-                    getElementByDomId: promisifyMethod(penpalChild?.getElementByDomId),
-                    setFrameId: promisifyMethod(penpalChild?.setFrameId),
-                    setBranchId: promisifyMethod(penpalChild?.setBranchId),
-                    getElementIndex: promisifyMethod(penpalChild?.getElementIndex),
-                    getComputedStyleByDomId: promisifyMethod(penpalChild?.getComputedStyleByDomId),
-                    updateElementInstance: promisifyMethod(penpalChild?.updateElementInstance),
-                    getFirstOnlookElement: promisifyMethod(penpalChild?.getFirstOnlookElement),
-                    setElementType: promisifyMethod(penpalChild?.setElementType),
-                    getElementType: promisifyMethod(penpalChild?.getElementType),
-                    getParentElement: promisifyMethod(penpalChild?.getParentElement),
-                    getChildrenCount: promisifyMethod(penpalChild?.getChildrenCount),
-                    getOffsetParent: promisifyMethod(penpalChild?.getOffsetParent),
-                    getActionLocation: promisifyMethod(penpalChild?.getActionLocation),
-                    getActionElement: promisifyMethod(penpalChild?.getActionElement),
-                    getInsertLocation: promisifyMethod(penpalChild?.getInsertLocation),
-                    getRemoveAction: promisifyMethod(penpalChild?.getRemoveAction),
-                    getTheme: promisifyMethod(penpalChild?.getTheme),
-                    setTheme: promisifyMethod(penpalChild?.setTheme),
-                    startDrag: promisifyMethod(penpalChild?.startDrag),
-                    drag: promisifyMethod(penpalChild?.drag),
-                    dragAbsolute: promisifyMethod(penpalChild?.dragAbsolute),
-                    endDragAbsolute: promisifyMethod(penpalChild?.endDragAbsolute),
-                    endDrag: promisifyMethod(penpalChild?.endDrag),
-                    endAllDrag: promisifyMethod(penpalChild?.endAllDrag),
-                    startEditingText: promisifyMethod(penpalChild?.startEditingText),
-                    editText: promisifyMethod(penpalChild?.editText),
-                    stopEditingText: promisifyMethod(penpalChild?.stopEditingText),
-                    updateStyle: promisifyMethod(penpalChild?.updateStyle),
-                    insertElement: promisifyMethod(penpalChild?.insertElement),
-                    removeElement: promisifyMethod(penpalChild?.removeElement),
-                    moveElement: promisifyMethod(penpalChild?.moveElement),
-                    groupElements: promisifyMethod(penpalChild?.groupElements),
-                    ungroupElements: promisifyMethod(penpalChild?.ungroupElements),
-                    insertImage: promisifyMethod(penpalChild?.insertImage),
-                    removeImage: promisifyMethod(penpalChild?.removeImage),
-                    isChildTextEditable: promisifyMethod(penpalChild?.isChildTextEditable),
-                    handleBodyReady: promisifyMethod(penpalChild?.handleBodyReady),
-                    captureScreenshot: promisifyMethod(penpalChild?.captureScreenshot),
-                    buildLayerTree: promisifyMethod(penpalChild?.buildLayerTree),
-                };
+                // Os mesmos nomes do caminho sem conexão, agora ligados ao frame de verdade.
+                return Object.fromEntries(
+                    PENPAL_CHILD_METHOD_NAMES.map((method) => [
+                        method,
+                        promisifyMethod((penpalChild as Record<string, any>)?.[method]),
+                    ]),
+                ) as PromisifiedPendpalChildMethods;
             }, [penpalChild]);
 
             useImperativeHandle(ref, (): IFrameView => {
@@ -321,7 +345,7 @@ export const FrameComponent = observer(
                         sandbox="allow-modals allow-forms allow-same-origin allow-scripts allow-popups allow-downloads"
                         allow="geolocation; microphone; camera; midi; encrypted-media"
                         style={{ width: frame.dimension.width, height: frame.dimension.height }}
-                        onLoad={setupPenpalConnection}
+                        onLoad={connectToPenpal ? setupPenpalConnection : undefined}
                         {...props}
                     />
                 </WebPreview>

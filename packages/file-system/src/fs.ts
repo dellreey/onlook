@@ -27,6 +27,16 @@ export class FileSystem {
         return this.basePath;
     }
 
+    /**
+     * Whether `initialize()` has already opened the underlying file system.
+     *
+     * Quem grava em disco durante uma desmontagem precisa saber disto: um `FileSystem` recém-criado
+     * ainda não tem onde gravar, e uma escrita nessa janela estoura em vez de ser ignorada.
+     */
+    get initialized(): boolean {
+        return this.isInitialized;
+    }
+
     async initialize(): Promise<void> {
         if (this.isInitialized) {
             return;

@@ -32,12 +32,17 @@ export const TopBar = observer(() => {
             isDisabled: !editorEngine.history.canUndo || editorEngine.chat.isStreaming,
             hotkey: Hotkey.UNDO,
             icon: <Icons.Reset className="h-4 w-4 mr-1" />,
+            // Os dois botões são só ícone, e o rótulo deles é um tooltip que só existe no hover. Sem
+            // um identificador estável, a verificação não consegue distinguir "o botão continua na
+            // barra" de "o botão sumiu" — e é exatamente isso que ela precisa medir.
+            testId: 'topbar-undo',
         },
         {
             click: () => editorEngine.action.redo(),
             isDisabled: !editorEngine.history.canRedo || editorEngine.chat.isStreaming,
             hotkey: Hotkey.REDO,
             icon: <Icons.Reset className="h-4 w-4 mr-1 scale-x-[-1]" />,
+            testId: 'topbar-redo',
         },
     ];
 
@@ -75,11 +80,12 @@ export const TopBar = observer(() => {
                         delay: 0,
                     }}
                 >
-                    {UNDO_REDO_BUTTONS.map(({ click, hotkey, icon, isDisabled }) => (
+                    {UNDO_REDO_BUTTONS.map(({ click, hotkey, icon, isDisabled, testId }) => (
                         <Tooltip key={hotkey.description}>
                             <TooltipTrigger asChild>
                                 <span>
                                     <Button
+                                        data-testid={testId}
                                         variant="ghost"
                                         size="icon"
                                         className="h-8"

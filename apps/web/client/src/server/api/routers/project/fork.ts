@@ -23,6 +23,7 @@ import { eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { verifyProjectAccess } from './helper';
+import { rejectIfLocalMode } from '../../../sandbox/local-runtime';
 
 type ForkedBranch = {
     newBranch: Branch;
@@ -164,6 +165,7 @@ export const fork = protectedProcedure
         name: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+        rejectIfLocalMode();
         // Forking clones the full private contents of the source project
         // (canvas, branches, live sandboxes) into a new project the caller
         // owns -- there is no public/template concept on `projects`, so this

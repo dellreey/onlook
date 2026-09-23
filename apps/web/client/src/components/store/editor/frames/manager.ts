@@ -260,6 +260,18 @@ export class FramesManager {
         await this.saveToStorage(frameId, frame);
     }
 
+    updateInMemory(frameId: string, frame: Partial<Frame>): void {
+        const existingFrame = this.get(frameId);
+        if (!existingFrame) return;
+
+        this._frameIdToData.set(frameId, {
+            ...existingFrame,
+            frame: { ...existingFrame.frame, ...frame },
+            selected: existingFrame.selected,
+        });
+        this.notify();
+    }
+
     saveToStorage = debounce(this.undebouncedSaveToStorage.bind(this), 1000);
 
     async undebouncedSaveToStorage(frameId: string, frame: Partial<Frame>) {

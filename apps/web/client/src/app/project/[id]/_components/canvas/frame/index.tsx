@@ -9,6 +9,7 @@ import { RightClickMenu } from '../../right-click-menu';
 import { GestureScreen } from './gesture';
 import { ResizeHandles } from './resize-handles';
 import { TopBar } from './top-bar';
+import { shouldConnectFrameToPenpal } from './frame-connection';
 import { useFrameReload } from './use-frame-reload';
 import { useSandboxTimeout } from './use-sandbox-timeout';
 import { FrameComponent, type IFrameView } from './view';
@@ -58,8 +59,9 @@ export const FrameView = observer(({ frame, isInDragSelection = false }: { frame
 
     const isSelected = editorEngine.frames.isSelected(frame.id);
     const branchData = editorEngine.branches.getBranchDataById(frame.branchId);
+    const isDrivenFrame = Boolean(frame.drivenPageId);
     const preloadScriptReady = branchData?.sandbox?.preloadScriptState === PreloadScriptState.INJECTED;
-    const isFrameReady = preloadScriptReady && !(isConnecting && !hasTimedOut);
+    const isFrameReady = isDrivenFrame || (preloadScriptReady && !(isConnecting && !hasTimedOut));
 
     useEffect(() => {
         if (isFrameReady) {
@@ -97,6 +99,7 @@ export const FrameView = observer(({ frame, isInDragSelection = false }: { frame
                 <FrameComponent
                     key={reloadKey}
                     frame={frame}
+                    connectToPenpal={shouldConnectFrameToPenpal(frame.drivenPageId)}
                     reloadIframe={immediateReload}
                     onConnectionFailed={handleConnectionFailed}
                     onConnectionSuccess={handleConnectionSuccess}

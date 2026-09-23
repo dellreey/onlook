@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '../../trpc';
 import { extractCsbPort, verifyBranchAccess, verifyProjectAccess } from './helper';
+import { rejectIfLocalMode } from '../../../sandbox/local-runtime';
 
 // Helper function to get existing frames in a canvas
 async function getExistingFrames(tx: any, canvasId: string): Promise<Frame[]> {
@@ -93,6 +94,7 @@ export const branchRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ ctx, input }) => {
+            rejectIfLocalMode();
             await verifyBranchAccess(ctx.db, ctx.user.id, input.branchId);
             try {
                 // Get source branch with its frames to extract port
@@ -242,6 +244,7 @@ export const branchRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ ctx, input }) => {
+            rejectIfLocalMode();
             await verifyProjectAccess(ctx.db, ctx.user.id, input.projectId);
             try {
                 return await ctx.db.transaction(async (tx) => {

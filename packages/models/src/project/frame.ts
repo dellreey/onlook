@@ -13,6 +13,8 @@ export interface Frame {
 
     // content
     url: string;
+    drivenPageId?: string | null;
+    drivenVariantId?: string | null;
 }
 
 export interface WindowMetadata {

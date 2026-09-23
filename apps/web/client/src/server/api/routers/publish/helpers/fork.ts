@@ -1,10 +1,12 @@
 import { CodeProvider, createCodeProviderClient, getStaticCodeProvider, type Provider } from '@onlook/code-provider';
+import { rejectIfLocalMode } from '../../../../sandbox/local-runtime';
 
 export async function forkBuildSandbox(
     sandboxId: string,
     userId: string,
     deploymentId: string,
 ): Promise<{ provider: Provider; sandboxId: string }> {
+    rejectIfLocalMode();
     const CodesandboxProvider = await getStaticCodeProvider(CodeProvider.CodeSandbox);
     const project = await CodesandboxProvider.createProject({
         source: 'template',

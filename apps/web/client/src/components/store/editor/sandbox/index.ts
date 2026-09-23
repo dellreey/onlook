@@ -17,6 +17,16 @@ export enum PreloadScriptState {
     LOADING = 'loading',
     INJECTED = 'injected'
 }
+
+/**
+ * A capacidade ausente do Runtime Local, em uma frase que a interface pode mostrar.
+ *
+ * O runtime local abre o projeto, o preview e o canvas a partir de uma raiz da máquina. O que ele
+ * não tem é o processo que roda e observa o projeto — terminal, observação de arquivos e o dev
+ * server —, e é por isso que a edição de código exige uma sessão de execução.
+ */
+export const LOCAL_RUNTIME_LIMITATION =
+    'Edição de código, terminal e observação de arquivos exigem uma sessão de execução. O Runtime Local abre o projeto, o preview e o canvas.';
 export class SandboxManager {
     readonly session: SessionManager;
     readonly gitManager: GitManager;
@@ -24,6 +34,16 @@ export class SandboxManager {
     private sync: CodeProviderSync | null = null;
     preloadScriptState: PreloadScriptState = PreloadScriptState.NOT_INJECTED
     routerConfig: RouterConfig | null = null;
+
+    /**
+     * O que este runtime não oferece, dito em uma frase, para a interface poder mostrar.
+     *
+     * O Runtime Local não observa arquivos nem abre terminal — isso é do sandbox de execução. A
+     * limitação fica registrada aqui em vez de virar uma rejeição sem dono: quem olha o editor
+     * precisa saber que a edição de código exige uma sessão de execução, e o resto do editor
+     * continua funcionando normalmente.
+     */
+    limitation: string | null = null;
 
     constructor(
         private branch: Branch,
@@ -49,13 +69,28 @@ export class SandboxManager {
         this.providerReactionDisposer = reaction(
             () => this.session.provider,
             async (provider) => {
-                if (provider) {
-                    await this.initializeSyncEngine(provider);
-                    await this.gitManager.init();
-                } else if (this.sync) {
-                    // If the provider is null, release the sync engine reference
-                    this.sync.release();
-                    this.sync = null;
+                try {
+                    if (provider) {
+                        await this.initializeSyncEngine(provider);
+                        // O histórico de código é operado por comandos (`git init`, `git status`), e
+                        // comandos são do sandbox de execução. No Runtime Local não há terminal: abrir
+                        // o repositório aqui falharia em toda abertura de projeto e mostraria esse erro
+                        // a quem só abriu o editor. A ausência fica dita, e não tentada.
+                        if (this.session.mode !== 'local') {
+                            await this.gitManager.init();
+                        }
+                    } else if (this.sync) {
+                        // If the provider is null, release the sync engine reference
+                        this.sync.release();
+                        this.sync = null;
+                    }
+                } catch (error) {
+                    // Uma reação do MobX não tem quem espere por ela: deixar o erro subir vira
+                    // `unhandledRejection` no navegador, que não diz nada a quem está usando o
+                    // editor. O que falhou fica registrado e visível.
+                    this.limitation =
+                        error instanceof Error ? error.message : 'Falha ao preparar a edição de código.';
+                    console.error('[SandboxManager] Sync unavailable:', error);
                 }
             },
             { fireImmediately: true },
@@ -79,11 +114,28 @@ export class SandboxManager {
             this.sync = null;
         }
 
+        // O observador é do sandbox de execução. No Runtime Local não existe processo observando o
+        // projeto, e pedir o observador falharia em toda abertura sem devolver nenhuma capacidade:
+        // a leitura inicial dos arquivos continua vindo do `pullFromSandbox`, dentro do `start()`.
+        const localMode = this.session.mode === 'local';
+
         this.sync = CodeProviderSync.getInstance(provider, this.fs, this.branch.sandbox.id, {
             exclude: EXCLUDED_SYNC_PATHS,
+            watch: !localMode,
         });
 
-        await this.sync.start();
+        try {
+            await this.sync.start();
+            this.limitation = localMode ? LOCAL_RUNTIME_LIMITATION : null;
+        } catch (error) {
+            // Sem observação de arquivos não há sincronização bidirecional. O sandbox local não a
+            // oferece, e isso é uma capacidade ausente — e não um erro do projeto aberto. As demais
+            // etapas (preload e índice de arquivos) seguem, porque não dependem do observador.
+            this.limitation =
+                error instanceof Error
+                    ? `Edição de código e terminal exigem uma sessão de execução (${error.message}).`
+                    : 'Edição de código e terminal exigem uma sessão de execução.';
+        }
         await this.ensurePreloadScriptExists();
         await this.fs.rebuildIndex();
     }
@@ -109,7 +161,17 @@ export class SandboxManager {
             await copyPreloadScriptToPublic(this.session.provider, routerConfig);
             this.preloadScriptState = PreloadScriptState.INJECTED
         } catch (error) {
-            console.error('[SandboxManager] Failed to ensure preload script exists:', error);
+            if (this.session.mode === 'local') {
+                // Sem raiz de rotas não há onde injetar o preload, e isso não impede abrir a página:
+                // quem serve o projeto é o processo de quem o roda, não o editor.
+                this.limitation = LOCAL_RUNTIME_LIMITATION;
+                console.info(
+                    '[SandboxManager] Preload script não injetado no Runtime Local:',
+                    error instanceof Error ? error.message : error,
+                );
+            } else {
+                console.error('[SandboxManager] Failed to ensure preload script exists:', error);
+            }
             // Mark as injected to prevent blocking frames indefinitely
             // Frames will handle the missing preload script gracefully
             this.preloadScriptState = PreloadScriptState.NOT_INJECTED

@@ -50,8 +50,23 @@ import {
     type WriteFileInput,
     type WriteFileOutput,
 } from '../../types';
+import {
+    copyFile,
+    cp,
+    lstat,
+    mkdir,
+    readdir,
+    readFile,
+    rename,
+    rm,
+    writeFile,
+} from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
+import { resolveProjectPath } from './path';
 
-export interface NodeFsProviderOptions {}
+export interface NodeFsProviderOptions {
+    projectRoot: string;
+}
 
 export class NodeFsProvider extends Provider {
     private readonly options: NodeFsProviderOptions;
@@ -62,43 +77,76 @@ export class NodeFsProvider extends Provider {
     }
 
     async initialize(input: InitializeInput): Promise<InitializeOutput> {
+        await resolveProjectPath(this.options.projectRoot, '.');
         return {};
     }
 
     async writeFile(input: WriteFileInput): Promise<WriteFileOutput> {
+        const target = await resolveProjectPath(this.options.projectRoot, input.args.path);
+        await writeFile(target, input.args.content, {
+            flag: input.args.overwrite === false ? 'wx' : 'w',
+        });
         return {
             success: true,
         };
     }
 
     async renameFile(input: RenameFileInput): Promise<RenameFileOutput> {
+        const oldPath = await resolveProjectPath(this.options.projectRoot, input.args.oldPath);
+        const newPath = await resolveProjectPath(this.options.projectRoot, input.args.newPath);
+        await rename(oldPath, newPath);
         return {};
     }
 
     async statFile(input: StatFileInput): Promise<StatFileOutput> {
+        const target = await resolveProjectPath(this.options.projectRoot, input.args.path);
+        const stats = await lstat(target);
         return {
-            type: 'file',
+            type: stats.isDirectory() ? 'directory' : 'file',
+            isSymlink: stats.isSymbolicLink(),
+            size: stats.size,
+            mtime: stats.mtimeMs,
+            ctime: stats.ctimeMs,
+            atime: stats.atimeMs,
         };
     }
 
     async deleteFiles(input: DeleteFilesInput): Promise<DeleteFilesOutput> {
+        const target = await resolveProjectPath(this.options.projectRoot, input.args.path);
+        await rm(target, { recursive: input.args.recursive ?? false, force: false });
         return {};
     }
 
     async listFiles(input: ListFilesInput): Promise<ListFilesOutput> {
+        const target = await resolveProjectPath(this.options.projectRoot, input.args.path);
+        let entries: Dirent[] = [];
+        try {
+            entries = await readdir(target, { withFileTypes: true });
+        } catch (error) {
+            // O editor pergunta por diretórios que podem não existir — ao detectar a raiz de rotas,
+            // por exemplo. "Não há nada aqui" é a resposta para um diretório ausente; deixar o
+            // `ENOENT` subir transforma essa pergunta em erro de servidor a cada abertura de projeto.
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
         return {
-            files: [],
+            files: entries.map((entry) => ({
+                name: entry.name,
+                type: entry.isDirectory() ? 'directory' : 'file',
+                isSymlink: entry.isSymbolicLink(),
+            })),
         };
     }
 
     async readFile(input: ReadFileInput): Promise<ReadFileOutput> {
+        const target = await resolveProjectPath(this.options.projectRoot, input.args.path);
+        const content = await readFile(target, 'utf8');
         return {
             file: {
                 path: input.args.path,
-                content: '',
+                content,
                 type: 'text',
                 toString: () => {
-                    return '';
+                    return content;
                 },
             },
         };
@@ -111,10 +159,29 @@ export class NodeFsProvider extends Provider {
     }
 
     async copyFiles(input: CopyFilesInput): Promise<CopyFileOutput> {
+        const source = await resolveProjectPath(this.options.projectRoot, input.args.sourcePath);
+        const target = await resolveProjectPath(this.options.projectRoot, input.args.targetPath);
+        const sourceStats = await lstat(source);
+        if (sourceStats.isDirectory()) {
+            await cp(source, target, {
+                recursive: input.args.recursive ?? false,
+                force: input.args.overwrite ?? true,
+                errorOnExist: input.args.overwrite === false,
+            });
+        } else {
+            if (input.args.overwrite === false) {
+                await copyFile(source, target, 1);
+            } else {
+                await copyFile(source, target);
+            }
+        }
         return {};
     }
 
     async createDirectory(input: CreateDirectoryInput): Promise<CreateDirectoryOutput> {
+        const target = await resolveProjectPath(this.options.projectRoot, input.args.path);
+        // Criar um diretório que já existe não é conflito: quem chama quer garantir que ele exista.
+        await mkdir(target, { recursive: true });
         return {};
     }
 

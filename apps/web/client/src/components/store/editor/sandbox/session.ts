@@ -4,10 +4,19 @@ import type { Branch } from '@onlook/models';
 import { makeAutoObservable } from 'mobx';
 import type { ErrorManager } from '../error';
 import { CLISessionImpl, CLISessionType, type CLISession, type TerminalSession } from './terminal';
+import { LocalSandboxProvider } from './local-provider';
 
 export class SessionManager {
     provider: Provider | null = null;
     isConnecting = false;
+    /**
+     * De onde os arquivos vêm, decidido pelo servidor.
+     *
+     * É a diferença entre um projeto que roda dentro de um sandbox de execução e um que roda na
+     * máquina de quem abriu o editor: o primeiro tem terminal e observação de arquivos, o segundo
+     * não tem. Quem consome o provedor precisa saber disso sem perguntar de novo ao servidor.
+     */
+    mode: 'local' | 'codesandbox' | null = null;
     terminalSessions = new Map<string, CLISession>();
     activeTerminalSessionId = 'cli';
 
@@ -29,6 +38,13 @@ export class SessionManager {
         this.isConnecting = true;
 
         const attemptConnection = async () => {
+            const capabilities = await api.sandbox.capabilities.query();
+            if (capabilities.kind === 'local') {
+                this.mode = 'local';
+                this.provider = new LocalSandboxProvider(sandboxId).asProvider();
+                return;
+            }
+            this.mode = 'codesandbox';
             const provider = await createCodeProviderClient(CodeProvider.CodeSandbox, {
                 providerOptions: {
                     codesandbox: {

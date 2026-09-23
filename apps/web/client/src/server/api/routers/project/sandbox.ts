@@ -10,7 +10,17 @@ import { getSandboxPreviewUrl, SandboxTemplates, Templates } from '@onlook/const
 import { shortenUuid } from '@onlook/utility/src/id';
 
 import { createTRPCRouter, protectedProcedure } from '../../trpc';
+import { getSandboxClientConfig } from '../../../sandbox/mode';
 import { listAccessibleSandboxIds, verifySandboxAccess } from './helper';
+import { getLocalRuntime, UNSUPPORTED_IN_LOCAL_MODE } from '../../../sandbox/local-runtime';
+
+function localMode() {
+    return getSandboxClientConfig().kind === 'local';
+}
+
+function unsupportedLocal(): never {
+    throw new TRPCError({ code: 'PRECONDITION_FAILED', message: UNSUPPORTED_IN_LOCAL_MODE });
+}
 
 function getProvider({
     sandboxId,
@@ -30,23 +40,77 @@ function getProvider({
                 },
             },
         });
-    } else {
-        return createCodeProviderClient(CodeProvider.NodeFs, {
-            providerOptions: {
-                nodefs: {},
-            },
-        });
     }
+    throw new Error('NodeFs providers are created only by the local runtime');
 }
 
 export const sandboxRouter = createTRPCRouter({
+    capabilities: protectedProcedure.query(() => getSandboxClientConfig()),
+    localSession: protectedProcedure
+        .input(z.object({ sandboxId: z.string() }))
+        .mutation(async ({ input, ctx }) => {
+            if (!localMode()) unsupportedLocal();
+            const project = await getLocalRuntime().registry.get(ctx.user.id, input.sandboxId);
+            if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
+            const preview = await getLocalRuntime().previews.start(project);
+            return {
+                sandboxId: project.id,
+                provider: 'node_fs' as const,
+                previewUrl: preview.url,
+                capabilities: getSandboxClientConfig().capabilities,
+            };
+        }),
+    localFile: protectedProcedure
+        .input(z.object({
+            sandboxId: z.string(),
+            operation: z.enum(['read', 'write', 'list', 'stat', 'delete', 'rename', 'copy', 'mkdir']),
+            path: z.string().optional(),
+            content: z.string().optional(),
+            oldPath: z.string().optional(),
+            newPath: z.string().optional(),
+            sourcePath: z.string().optional(),
+            targetPath: z.string().optional(),
+            recursive: z.boolean().optional(),
+        }))
+        .mutation(async ({ input, ctx }) => {
+            if (!localMode()) unsupportedLocal();
+            const project = await getLocalRuntime().registry.get(ctx.user.id, input.sandboxId);
+            if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
+            const provider = await getLocalRuntime().provider(project);
+            try {
+                switch (input.operation) {
+                    case 'read': return await provider.readFile({ args: { path: input.path ?? '' } });
+                    case 'write': return await provider.writeFile({ args: { path: input.path ?? '', content: input.content ?? '' } });
+                    case 'list': return await provider.listFiles({ args: { path: input.path ?? '.' } });
+                    case 'stat': return await provider.statFile({ args: { path: input.path ?? '' } });
+                    case 'delete': return await provider.deleteFiles({ args: { path: input.path ?? '', recursive: input.recursive } });
+                    case 'rename': return await provider.renameFile({ args: { oldPath: input.oldPath ?? '', newPath: input.newPath ?? '' } });
+                    case 'copy': return await provider.copyFiles({ args: { sourcePath: input.sourcePath ?? '', targetPath: input.targetPath ?? '', recursive: input.recursive } });
+                    case 'mkdir': return await provider.createDirectory({ args: { path: input.path ?? '' } });
+                }
+            } finally {
+                await provider.destroy();
+            }
+        }),
     create: protectedProcedure
         .input(
             z.object({
                 title: z.string().optional(),
             }),
         )
-        .mutation(async ({ input }) => {
+        .mutation(async ({ input, ctx }) => {
+            if (localMode()) {
+                const project = await getLocalRuntime().registry.create(
+                    ctx.user.id,
+                    input.title || 'Onlook Local Project',
+                );
+                const preview = await getLocalRuntime().previews.start(project);
+                return {
+                    sandboxId: project.id,
+                    provider: 'node_fs' as const,
+                    previewUrl: preview.url,
+                };
+            }
             // Create a new sandbox using the static provider
             const CodesandboxProvider = await getStaticCodeProvider(CodeProvider.CodeSandbox);
 
@@ -75,6 +139,17 @@ export const sandboxRouter = createTRPCRouter({
         )
         .mutation(async ({ input, ctx }) => {
             const userId = ctx.user.id;
+            if (localMode()) {
+                const project = await getLocalRuntime().registry.get(userId, input.sandboxId);
+                if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
+                const preview = await getLocalRuntime().previews.start(project);
+                return {
+                    provider: 'node_fs' as const,
+                    sandboxId: project.id,
+                    previewUrl: preview.url,
+                    capabilities: getSandboxClientConfig().capabilities,
+                };
+            }
             await verifySandboxAccess(ctx.db, userId, input.sandboxId);
             const provider = await getProvider({
                 sandboxId: input.sandboxId,
@@ -95,6 +170,12 @@ export const sandboxRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ input, ctx }) => {
+            if (localMode()) {
+                const project = await getLocalRuntime().registry.get(ctx.user.id, input.sandboxId);
+                if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
+                await getLocalRuntime().previews.stop(project.id);
+                return;
+            }
             await verifySandboxAccess(ctx.db, ctx.user.id, input.sandboxId);
             const provider = await getProvider({ sandboxId: input.sandboxId });
             try {
@@ -134,6 +215,7 @@ export const sandboxRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ input, ctx }) => {
+            if (localMode()) unsupportedLocal();
             // Forking a sandbox tied to another user's project would clone their
             // source tree. Templates / fresh sandboxes resolve to no project and
             // are allowed (blank-project + local-import flows fork a template).
@@ -185,6 +267,13 @@ export const sandboxRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ input, ctx }) => {
+            if (localMode()) {
+                const project = await getLocalRuntime().registry.get(ctx.user.id, input.sandboxId);
+                if (!project) throw new TRPCError({ code: 'NOT_FOUND' });
+                await getLocalRuntime().previews.stop(project.id);
+                await getLocalRuntime().registry.delete(ctx.user.id, project.id);
+                return;
+            }
             await verifySandboxAccess(ctx.db, ctx.user.id, input.sandboxId);
             const provider = await getProvider({ sandboxId: input.sandboxId });
             try {
@@ -201,6 +290,7 @@ export const sandboxRouter = createTRPCRouter({
             }),
         )
         .mutation(async ({ input }) => {
+            if (localMode()) unsupportedLocal();
             const MAX_RETRY_ATTEMPTS = 3;
             const DEFAULT_PORT = 3000;
             let lastError: Error | null = null;

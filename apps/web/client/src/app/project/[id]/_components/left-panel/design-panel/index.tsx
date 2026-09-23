@@ -12,6 +12,7 @@ import { ImagesTab } from './image-tab';
 import { LayersTab } from './layers-tab';
 import { PagesTab } from './page-tab';
 import { ZoomControls } from './zoom-controls';
+import { DrivenTab } from './driven-tab';
 
 const tabs: {
     value: LeftPanelTabValue;
@@ -44,6 +45,14 @@ const tabs: {
             value: LeftPanelTabValue.BRANCHES,
             icon: <Icons.Branch className="w-5 h-5" />,
             label: transKeys.editor.panels.layers.tabs.branches,
+        },
+        {
+            value: LeftPanelTabValue.DRIVEN,
+            icon: <Icons.Sparkles className="w-5 h-5" />,
+            // O rótulo é uma chave de mensagem, como o das outras abas: o nome da aba é texto de
+            // interface. Antes era a palavra solta, e o `t` do render tentava traduzir "Driven" —
+            // uma chave que não existe, que aparece no console como MISSING_MESSAGE.
+            label: transKeys.editor.panels.layers.tabs.driven,
         },
     ];
 
@@ -132,13 +141,16 @@ export const DesignPanel = observer(() => {
             {/* Content panel */}
             {editorEngine.state.leftPanelTab && (
                 <>
-                    <div className="flex-1 w-[280px] bg-background/95 rounded-xl">
+                    {/* O identificador nomeia a superfície que a aba escolhida desenha. Ele existe
+                        para a verificação poder distinguir "a aba abriu" de "a aba está na barra". */}
+                    <div className="flex-1 w-[280px] bg-background/95 rounded-xl" data-testid="left-panel-surface">
                         <div className="border backdrop-blur-xl h-full shadow overflow-auto p-0 rounded-xl">
                             {selectedTab === LeftPanelTabValue.LAYERS && <LayersTab />}
                             {selectedTab === LeftPanelTabValue.BRAND && <BrandTab />}
                             {selectedTab === LeftPanelTabValue.PAGES && <PagesTab />}
                             {selectedTab === LeftPanelTabValue.IMAGES && <ImagesTab />}
                             {selectedTab === LeftPanelTabValue.BRANCHES && <BranchesTab />}
+                            {selectedTab === LeftPanelTabValue.DRIVEN && <DrivenTab />}
                         </div>
                     </div>
 

@@ -17,6 +17,7 @@ import {
     utilsRouter,
 } from './routers';
 import { branchRouter } from './routers/project/branch';
+import { drivenRouter } from './routers/driven';
 
 /**
  * This is the primary router for your server.
@@ -40,6 +41,7 @@ export const appRouter = createTRPCRouter({
     subscription: subscriptionRouter,
     usage: usageRouter,
     publish: publishRouter,
+    driven: drivenRouter,
 });
 
 // export type definition of API

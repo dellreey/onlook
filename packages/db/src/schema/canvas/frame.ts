@@ -14,6 +14,8 @@ export const frames = pgTable("frames", {
         // .notNull() // will need to be null before final migration
         .references(() => branches.id, { onDelete: "cascade", onUpdate: "cascade" }),
     url: varchar("url").notNull(),
+    drivenPageId: varchar("driven_page_id"),
+    drivenVariantId: varchar("driven_variant_id"),
 
     // display data
     x: numeric("x").notNull(),

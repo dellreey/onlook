@@ -46,6 +46,8 @@ export const createDefaultFrame = (
         canvasId,
         branchId,
         url,
+        drivenPageId: null,
+        drivenVariantId: null,
         x: defaultFrame.x,
         y: defaultFrame.y,
         width: defaultFrame.width,
